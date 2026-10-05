@@ -3,3 +3,5 @@ __pycache__/
 .env
 fxbot.log
 discord_webhooks.txt
+予約/
+送信ログ.txt

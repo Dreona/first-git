@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 .env
 fxbot.log
+discord_webhooks.txt

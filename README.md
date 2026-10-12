@@ -45,6 +45,46 @@ python fxbot_mt5.py manage --execute         # タスクスケジューラで15�
 ログイン済みの MT5 に接続するので、パスワードの環境変数は不要です
 (別の口座に切り替える場合のみ `MT5_LOGIN` / `MT5_PASSWORD` / `MT5_SERVER`)。
 
+## MEXC 無期限先物 (アルトコイン) 版 — `cryptobot.py`
+
+ETH / SOL / XRP などの USDT-M 無期限先物を、トレンドフォローで売買します。
+判断はすべてコードで決定的に行い、AI やモデルが売買判断やリスク上限を上書きすることはありません。
+
+| 項目 | 既定値 (環境変数で変更可) |
+|---|---|
+| 銘柄 | `CRYPTO_SYMBOLS=ETH/USDT:USDT,SOL/USDT:USDT,XRP/USDT:USDT` |
+| 時間足 | `CRYPTO_TIMEFRAME=4h` |
+| 相場状態 | ATR が平常の2.5倍以上 → crisis (新規禁止) / EMA50-200 乖離2%以上 → trend / それ以外 → range (見送り) |
+| エントリー | trend 中に直近20本の高値 (安値) を終値で抜けたら順張り |
+| 損切り / 利確 | ATR×2 / 損切り幅の2倍 (発注時に取引所側へ同時設定) |
+| 1トレードのリスク | `RISK_PCT=0.02` (残高の2%) |
+| レバレッジ | `MAX_LEVERAGE=3` (分離マージン) |
+| 同時保有 | `MAX_POSITIONS=2` |
+| 1日の損失上限 | `DAILY_LOSS_PCT=0.05` → 当日は新規停止 |
+| 最大ドローダウン | `MAX_DD_PCT=0.15` → 全決済して停止 (`resume` まで再開しない) |
+| コスト | `FEE_RATE=0.0004` / `SLIPPAGE=0.0005` (片道。自分の手数料率に合わせる) |
+
+```
+pip install -r requirements.txt
+export MEXC_API_KEY=...        # 先物取引の権限のみ付与 (出金権限は付けない、IP 制限推奨)
+export MEXC_API_SECRET=...
+
+python cryptobot.py backtest --bars 3000      # 過去データで検証 (APIキー不要)
+python cryptobot.py status                    # 残高・建玉・相場状態・シグナル
+python cryptobot.py run                       # ドライラン (発注内容の確認のみ)
+python cryptobot.py run --execute --live-ok   # 本番発注 (cron で時間足ごとに実行)
+python cryptobot.py halt                      # キルスイッチ (新規エントリー停止)
+python cryptobot.py resume                    # 解除
+```
+
+注意:
+- MEXC 先物にはテストネットがないため、`--execute` は常に本番です。まず `backtest` と
+  ドライランで確認し、最初は少額で動かしてください。
+- MEXC の先物 API は 2022 年から発注が停止されていた期間があります。2026-03 に再開と
+  公式の更新履歴にありますが、自分の口座で発注できるか少額で確認してください。
+- バックテストは資金調達率 (funding) を含みません。
+- MEXC は日本の金融庁に登録された暗号資産交換業者ではありません。
+
 ## テスト
 ```
 python -m unittest discover -s tests

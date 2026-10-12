@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 .env
 fxbot.log
+cryptobot_state.json
+cryptobot_state.json.tmp

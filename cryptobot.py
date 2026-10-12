@@ -199,14 +199,16 @@ def save_state(state, path=STATE_FILE):
 
 # ---------- バックテスト ----------
 
-def backtest(candles, cfg=CONFIG, equity=1000.0):
+def backtest(candles, cfg=CONFIG, equity=100.0, lot=0.0, min_lot=0.0):
     """シグナルを次の足の始値で約定させて検証する.
 
+    lot / min_lot を指定すると、数量を取引所の刻み (基軸通貨建て) で切り捨て、
+    最小数量に満たないシグナルは見送る (少額口座での実際の動きに近づける)。
     同じ足で損切りと利確の両方に届いた場合は損切りを優先 (保守的)。
     資金調達率 (funding) は含まない。
     """
     start, peak, max_dd = equity, equity, 0.0
-    trades, pos = [], None
+    trades, pos, skipped = [], None, 0
     warm = max(cfg["ema_slow"], 100 + cfg["atr_n"])
     cost = cfg["fee"] + cfg["slippage"]
     for i in range(warm, len(candles)):
@@ -230,7 +232,13 @@ def backtest(candles, cfg=CONFIG, equity=1000.0):
                 shift = fill - sig["entry"]
                 stop, take = sig["stop"] + shift, sig["take"] + shift
                 qty = size_position(equity, fill, stop, cfg)
-                if qty > 0:
+                if lot:
+                    qty = to_contracts(qty, lot, 1, max(1, round(min_lot / lot))) * lot
+                if not stop_inside_liquidation(fill, stop, cfg["max_leverage"]):
+                    qty = 0
+                if qty <= 0:
+                    skipped += 1
+                else:
                     pos = {"side": sig["side"], "entry": fill, "stop": stop,
                            "take": take, "qty": qty}
         peak = max(peak, equity)
@@ -239,6 +247,7 @@ def backtest(candles, cfg=CONFIG, equity=1000.0):
     losses = [-t["pnl"] for t in trades if not t["win"]]
     return {
         "trades": len(trades),
+        "skipped": skipped,
         "win_rate": len(wins) / len(trades) if trades else 0.0,
         "profit_factor": sum(wins) / sum(losses) if losses else float("inf") if wins else 0.0,
         "return": equity / start - 1,
@@ -340,13 +349,16 @@ def cmd_status(args):
 
 def cmd_backtest(args):
     ex = exchange(keys=False)
-    total = []
     for sym in CONFIG["symbols"]:
-        res = backtest(fetch_history(ex, sym, CONFIG["timeframe"], args.bars))
-        total.append(res)
-        print(f"{sym}: 取引 {res['trades']}回  勝率 {res['win_rate']:.0%}  "
-              f"PF {res['profit_factor']:.2f}  損益 {res['return']:+.1%}  "
-              f"最大DD {res['max_dd']:.1%}")
+        m = ex.market(sym)
+        lot = (m.get("contractSize") or 1) * (m["precision"]["amount"] or 1)
+        min_lot = (m.get("contractSize") or 1) * ((m["limits"]["amount"] or {}).get("min") or 1)
+        res = backtest(fetch_history(ex, sym, CONFIG["timeframe"], args.bars),
+                       equity=args.equity, lot=lot, min_lot=min_lot)
+        print(f"{sym}: 取引 {res['trades']}回 (最小数量未満で見送り {res['skipped']}回)  "
+              f"勝率 {res['win_rate']:.0%}  PF {res['profit_factor']:.2f}  "
+              f"{args.equity:,.0f} → {res['final_equity']:,.2f} USDT ({res['return']:+.1%})  "
+              f"最大DD {res['max_dd']:.1%}  [最小 {min_lot:g} / 刻み {lot:g}]")
     print(f"(時間足 {CONFIG['timeframe']} / 直近 {args.bars} 本 / 手数料 {CONFIG['fee']:.2%} "
           f"+ 滑り {CONFIG['slippage']:.2%} 片道 / funding は含まない)")
 
@@ -424,6 +436,7 @@ def main(argv=None):
     p.add_argument("--execute", action="store_true", help="実際に発注する")
     p.add_argument("--live-ok", action="store_true", help="本番口座での発注を許可")
     p.add_argument("--bars", type=int, default=3000, help="backtest に使う足の本数")
+    p.add_argument("--equity", type=float, default=100.0, help="backtest の初期資金 (USDT)")
     args = p.parse_args(argv)
     {"status": cmd_status, "backtest": cmd_backtest, "run": cmd_run,
      "halt": cmd_halt, "resume": lambda a: cmd_halt(a, False)}[args.command](args)

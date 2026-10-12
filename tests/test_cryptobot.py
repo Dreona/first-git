@@ -146,6 +146,18 @@ class BacktestTest(unittest.TestCase):
                 self.assertLess(t["pnl"], 0)
         self.assertGreaterEqual(res["max_dd"], 0)
 
+    def test_lot_rounding_skips_too_small_orders(self):
+        free = cryptobot.backtest(trend_up(600), equity=100)
+        coarse = cryptobot.backtest(trend_up(600), equity=100, lot=1000, min_lot=1000)
+        self.assertGreater(free["trades"], 0)
+        self.assertEqual(coarse["trades"], 0)
+        self.assertGreater(coarse["skipped"], 0)
+
+    def test_lot_rounding_rounds_down(self):
+        res = cryptobot.backtest(trend_up(600), equity=100, lot=0.1, min_lot=0.1)
+        for t in res["log"]:
+            self.assertGreaterEqual(t["pnl"], -100 * CFG["risk_pct"] * 1.3)
+
     def test_no_trades_in_range(self):
         res = cryptobot.backtest(flat(500))
         self.assertEqual((res["trades"], res["return"]), (0, 0))
@@ -156,7 +168,7 @@ class BacktestTest(unittest.TestCase):
         cs.append(bar(p, p + 6, p, p + 5))           # シグナル
         q = cs[-1]["c"]
         cs.append(bar(q, q, q - 50, q - 49))          # 次の足で約定して損切り
-        res = cryptobot.backtest(cs)
+        res = cryptobot.backtest(cs, equity=1000)
         last = res["log"][-1]
         self.assertEqual((last["side"], last["win"]), ("buy", False))
         equity_before = res["final_equity"] - last["pnl"]

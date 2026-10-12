@@ -69,7 +69,7 @@ pip install -r requirements.txt
 export MEXC_API_KEY=...        # 先物取引の権限のみ付与 (出金権限は付けない、IP 制限推奨)
 export MEXC_API_SECRET=...
 
-python cryptobot.py backtest --bars 3000      # 過去データで検証 (APIキー不要)
+python cryptobot.py backtest --equity 100    # 100 USDT から始めた場合を過去データで検証 (APIキー不要)
 python cryptobot.py status                    # 残高・建玉・相場状態・シグナル
 python cryptobot.py run                       # ドライラン (発注内容の確認のみ)
 python cryptobot.py run --execute --live-ok   # 本番発注 (cron で時間足ごとに実行)
@@ -78,6 +78,9 @@ python cryptobot.py resume                    # 解除
 ```
 
 注意:
+- 数量は毎回「その時点の残高 × 2%」から計算するので、増えた利益は自動で次のトレードに
+  回ります (複利)。少額口座では最小枚数に届かず見送るシグナルがあり、`backtest` は
+  取引所の最小数量・刻みで切り捨てて、その見送り回数も表示します。
 - MEXC 先物にはテストネットがないため、`--execute` は常に本番です。まず `backtest` と
   ドライランで確認し、最初は少額で動かしてください。
 - MEXC の先物 API は 2022 年から発注が停止されていた期間があります。2026-03 に再開と
